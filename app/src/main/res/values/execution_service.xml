@@ -3,5 +3,9 @@
     <string name="execution_channel">任务运行</string>
     <string name="execution_title">Eta 正在运行</string>
     <string name="execution_summary">%1$d 项任务正在运行，可返回 Eta 查看进度</string>
+    <string name="execution_finished">Eta 任务已完成</string>
+    <string name="execution_failed">Eta 任务失败</string>
+    <string name="execution_phase_completed">任务已完成，可返回 Eta 查看结果</string>
+    <string name="execution_phase_failed">任务执行失败，可返回 Eta 查看详情</string>
     <string name="execution_stop">停止运行任务</string>
 </resources>
