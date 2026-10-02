@@ -120,6 +120,26 @@ internal class AgentRuntimeClient(
         }
     }
 
+    /** Delivers a steering message to the active run without cancelling its current request. */
+    fun sendMessage(runId: String, text: String): Boolean {
+        if (runId.isBlank() || text.trim().isBlank()) return false
+        val responseLatch = CountDownLatch(1)
+        val accepted = AtomicReference(false)
+        val clientMessenger = Messenger(
+            SteerHandler { result ->
+                accepted.set(result)
+                responseLatch.countDown()
+            }
+        )
+        return withRuntimeMessenger(false) { serviceMessenger ->
+            val msg = Message.obtain(null, AgentRuntimeWire.MSG_STEER)
+            msg.replyTo = clientMessenger
+            msg.data = AgentRuntimeWire.steerBundle(runId, text)
+            serviceMessenger.send(msg)
+            responseLatch.await(RESPONSE_TIMEOUT_SECONDS, TimeUnit.SECONDS) && accepted.get()
+        }
+    }
+
     fun ackResult(runId: String): Boolean {
         if (runId.isBlank()) return false
         return withRuntimeMessenger(false) { serviceMessenger ->
@@ -305,6 +325,16 @@ internal class AgentRuntimeClient(
                 }
 
                 AgentRuntimeWire.MSG_REQUEST_INGESTED -> onRequestIngested()
+            }
+        }
+    }
+
+    private class SteerHandler(
+        private val onResponse: (Boolean) -> Unit,
+    ) : Handler(Looper.getMainLooper()) {
+        override fun handleMessage(msg: Message) {
+            if (msg.what == AgentRuntimeWire.MSG_STEER_RESPONSE) {
+                onResponse(AgentRuntimeWire.steerSucceeded(msg.data ?: return))
             }
         }
     }

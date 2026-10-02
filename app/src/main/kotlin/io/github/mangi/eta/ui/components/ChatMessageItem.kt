@@ -153,6 +153,7 @@ import io.github.mangi.eta.ui.model.ToolActivityMessageUi
 import io.github.mangi.eta.ui.model.ToolActivityStatusUi
 import io.github.mangi.eta.ui.model.ToolSummaryMessageUi
 import io.github.mangi.eta.ui.model.UserMessageUi
+import io.github.mangi.eta.ui.markdown.StreamingGfmParserSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter
@@ -1002,20 +1003,72 @@ private fun AgentMessageBlock(
     }
 }
 
+private class StableMarkdownParseState {
+    var state by mutableStateOf<State.Success?>(null)
+
+    suspend fun parse(content: String) {
+        val parsed = withContext(Dispatchers.Default) {
+            StreamingGfmParserSession().parse(content, isComplete = true).state
+        }
+        state = parsed
+    }
+}
+
+@Composable
+private fun ChunkedMarkdown(
+    content: String,
+    modifier: Modifier = Modifier,
+    tone: ChatMarkdownTone = ChatMarkdownTone.Answer,
+) {
+    val chunks = remember(content) { MarkdownChunking.split(content) }
+    Column(modifier = modifier) {
+        chunks.forEachIndexed { index, chunk ->
+            key(index) {
+                StableMarkdown(
+                    chunkingEnabled = false,
+                    content = chunk,
+                    tone = tone,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun StableMarkdown(
+    chunkingEnabled: Boolean = true,
     content: String,
     modifier: Modifier = Modifier,
     tone: ChatMarkdownTone = ChatMarkdownTone.Answer,
     markdownState: MarkdownState? = null,
     parsedState: State.Success? = null,
 ) {
-    // 流式终态已有完整 AST，直接复用，避免新解析器的 Loading 原文先撑高页面再缩回。
-    val state = parsedState ?: (markdownState ?: rememberMarkdownState(
-        content = content,
-        retainState = true,
-    )).state.collectAsState().value
+    if (chunkingEnabled && content.length > MarkdownChunking.LARGE_DOCUMENT_CHARS && markdownState == null) {
+        ChunkedMarkdown(content = content, modifier = modifier, tone = tone)
+        return
+    }
+
+    // 流式终态已有完整 AST，直接复用；历史大文本不再让 rememberMarkdownState
+    // 在 Compose 组合阶段做解析，而是交给 Default 的多线程调度器。
+    val backgroundParsedState = remember(content) { StableMarkdownParseState() }
+    LaunchedEffect(content) {
+        if (parsedState == null && markdownState == null) {
+            backgroundParsedState.parse(content)
+        }
+    }
+    val state = parsedState ?: markdownState?.state?.collectAsState()?.value
+        ?: backgroundParsedState.state
     val components = remember { chatMarkdownComponents() }
+    if (state == null) {
+        Text(
+            text = content,
+            style = chatMarkdownBodyStyle(tone),
+            color = chatMarkdownTextColor(tone),
+            modifier = modifier,
+        )
+        return
+    }
     Markdown(
         state = state,
         colors = chatMarkdownColors(tone),
@@ -2227,7 +2280,7 @@ private fun ThinkingRow(
     // 后台解析，而不是等到首次点击展开。否则首帧只能测量 loading fallback 的纯文本高度，
     // 解析完成后正文高度会再次变化；状态挂在行级还能在收起/展开循环中存活，
     // 避免每次展开都重新走一遍异步解析。
-    val stableMarkdownState = if (streamingState == null && completedMarkdownState == null) {
+    val stableMarkdownState = if (streamingState == null && completedMarkdownState == null && message.content.length <= MarkdownChunking.LARGE_DOCUMENT_CHARS) {
         rememberMarkdownState(
             content = message.content,
             retainState = true,

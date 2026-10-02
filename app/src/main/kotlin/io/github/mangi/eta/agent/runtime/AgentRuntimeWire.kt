@@ -30,6 +30,8 @@ import kotlinx.serialization.json.Json
  * 不引入 AIDL：结构化字段使用 [Bundle]，图片正文使用 [ParcelFileDescriptor]，避免占用 Binder 事务缓冲区。
  */
 internal object AgentRuntimeWire {
+    const val MSG_STEER = 13
+    const val MSG_STEER_RESPONSE = 14
     const val MSG_READ_CONTEXT_RESULT = 15
     const val OP_CHAT = "chat"
     const val OP_COMPACT = "compact"
@@ -88,6 +90,7 @@ internal object AgentRuntimeWire {
     private const val KEY_TYPE = "type"
     private const val KEY_RUN_ID = "run_id"
     private const val KEY_PROMPT = "prompt"
+    private const val KEY_MESSAGE = "message"
     private const val KEY_ASSISTANT_SCREEN_CONTEXT = "assistant_screen_context"
     private const val KEY_MODEL_SESSION_ID = "model_session_id"
     private const val KEY_PROVIDER_ID = "provider_id"
@@ -150,6 +153,7 @@ internal object AgentRuntimeWire {
     private const val MAX_DRAIN_REASONING_CHARS = 4_000
     private const val TRUNCATED_SUFFIX = "\n\n[跨进程结果过长，已截断]"
     private const val MAX_START_REQUEST_PARCEL_BYTES = 768 * 1024
+    private const val MAX_STEER_CHARS = 16_000
 
     data class RunRequest(
         val runId: String,
@@ -587,6 +591,25 @@ internal object AgentRuntimeWire {
     fun ackBundle(runId: String): Bundle = Bundle().apply {
         putString(KEY_RUN_ID, runId)
     }
+
+    fun steerBundle(runId: String, text: String): Bundle {
+        require(runId.isNotBlank()) { "steer runId must not be blank" }
+        require(text.trim().isNotBlank()) { "steer message must not be blank" }
+        require(text.length <= MAX_STEER_CHARS) { "steer message is too long" }
+        return Bundle().apply {
+            putString(KEY_RUN_ID, runId)
+            putString(KEY_MESSAGE, text)
+        }
+    }
+
+    fun steerTextFromBundle(bundle: Bundle): String = bundle.getString(KEY_MESSAGE).orEmpty()
+
+    fun steerResponseBundle(runId: String, accepted: Boolean): Bundle = Bundle().apply {
+        putString(KEY_RUN_ID, runId)
+        putBoolean(KEY_OK, accepted)
+    }
+
+    fun steerSucceeded(bundle: Bundle): Boolean = bundle.getBoolean(KEY_OK)
 
     fun attachRunResponseBundle(runId: String, attached: Boolean): Bundle = Bundle().apply {
         putString(KEY_RUN_ID, runId)

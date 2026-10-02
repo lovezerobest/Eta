@@ -135,6 +135,8 @@ internal fun AgentChatInputBar(
     val canSend = textFieldState.text.isNotBlank() ||
         pendingImages.isNotEmpty() ||
         pendingFileReferences.isNotEmpty()
+    val canSteer = isStreaming && textFieldState.text.isNotBlank() &&
+        pendingImages.isEmpty() && pendingFileReferences.isEmpty()
     val density = LocalDensity.current
     val statusBarTopPx = WindowInsets.statusBars.getTop(density)
     var inputContainerTopPx by remember { mutableIntStateOf(0) }
@@ -331,7 +333,15 @@ internal fun AgentChatInputBar(
 
                         IconButton(
                             onClick = if (isStreaming) {
-                                onStop
+                                if (canSteer) {
+                                    {
+                                        val submittedText = textFieldState.text.toString()
+                                        textFieldState.clearText()
+                                        onSubmit(submittedText)
+                                    }
+                                } else {
+                                    onStop
+                                }
                             } else {
                                 {
                                     if (canSend) {
@@ -348,7 +358,7 @@ internal fun AgentChatInputBar(
                             // 保留统一的点击区域，仅让可见圆形与相邻操作图标保持同一尺寸。
                             val sendButtonColor by animateColorAsState(
                                 targetValue = when {
-                                    isStreaming -> MiuixTheme.colorScheme.onSurface
+                                    isStreaming && !canSteer -> MiuixTheme.colorScheme.onSurface
                                     canSend -> MiuixTheme.colorScheme.primary
                                     else -> MiuixTheme.colorScheme.surfaceContainerHigh
                                 },
@@ -363,7 +373,7 @@ internal fun AgentChatInputBar(
                                 contentAlignment = Alignment.Center,
                             ) {
                                 AnimatedContent(
-                                    targetState = isStreaming,
+                                    targetState = isStreaming && !canSteer,
                                     transitionSpec = {
                                         (fadeIn(tween(130)) + scaleIn(tween(160), initialScale = 0.72f))
                                             .togetherWith(
@@ -381,6 +391,7 @@ internal fun AgentChatInputBar(
                                         },
                                         contentDescription = when {
                                             streaming -> stringResource(R.string.chat_stop)
+                                            isStreaming && canSteer -> stringResource(R.string.overlay_supplement)
                                             isEditingMessage && preserveFollowingMessages -> "保存消息"
                                             else -> stringResource(R.string.chat_send)
                                         },

@@ -209,6 +209,15 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
                     if (runId.isNotBlank()) cancelRun(runId)
                 }
 
+                AgentRuntimeWire.MSG_STEER -> {
+                    val data = msg.data ?: return
+                    steerRun(
+                        runId = AgentRuntimeWire.runIdFromBundle(data),
+                        text = AgentRuntimeWire.steerTextFromBundle(data),
+                        replyTo = msg.replyTo,
+                    )
+                }
+
                 AgentRuntimeWire.MSG_ACK_RESULT -> {
                     val runId = AgentRuntimeWire.runIdFromBundle(msg.data ?: return)
                     dispatchResultIo { AgentRuntimeResultStore.remove(this@AgentRuntimeService, runId) }
@@ -402,6 +411,7 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
         entrySurfaceGuard: EntrySurfaceGuard?,
     ) {
         if (activeSession !== session) return
+        (application as? EtaApp)?.onAgentEvent(event)
         val revealsForegroundOperation = AgentOverlayVisibilityPolicy.shouldRevealFor(event)
         val requiresEntrySurfaceDismissal =
             AgentOverlayVisibilityPolicy.shouldDismissEntrySurfaceFor(event)
@@ -692,6 +702,30 @@ internal class AgentRuntimeService : Service(), LifecycleOwner, SavedStateRegist
             )
         )
     }
+
+    private fun steerRun(runId: String, text: String, replyTo: Messenger?) {
+        val normalized = text.trim()
+        val session = activeSession
+        val accepted = normalized.isNotBlank() &&
+            normalized.length <= 16_000 &&
+            session?.runId == runId &&
+            session.steer(normalized) { recordSupplementEvent(normalized) } != null
+        sendSteerResponse(runId, replyTo, accepted)
+    }
+
+    private fun sendSteerResponse(runId: String, replyTo: Messenger?, accepted: Boolean) {
+        runCatching {
+            val msg = Message.obtain(null, AgentRuntimeWire.MSG_STEER_RESPONSE)
+            msg.data = AgentRuntimeWire.steerResponseBundle(runId, accepted)
+            replyTo?.send(msg)
+        }.onFailure { throwable ->
+            AndroidAgentLogger.warnThrottled("runtime_steer_response_failed") {
+                "Agent runtime steer response failed: type=${throwable.safeLogType()}"
+            }
+        }
+    }
+
+
 
     private fun requestStop() {
         val session = activeSession

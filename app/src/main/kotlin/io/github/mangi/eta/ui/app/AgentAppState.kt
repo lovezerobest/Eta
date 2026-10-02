@@ -952,6 +952,25 @@ internal class AgentAppState(
         val prompt = (submittedText ?: homeState.input).trim()
         val pendingImages = homeState.pendingImages
         val pendingFileReferences = homeState.pendingFileReferences
+        if (homeState.isStreaming) {
+            if (prompt.isBlank()) return
+            if (pendingImages.isNotEmpty() || pendingFileReferences.isNotEmpty()) {
+                Toast.makeText(appContext, appContext.getString(R.string.overlay_continuation_unavailable), Toast.LENGTH_SHORT).show()
+                return
+            }
+            val runId = currentRunId ?: return
+            updateCurrentConversation(homeState.copy(input = ""))
+            scope.launch(Dispatchers.IO) {
+                val accepted = AgentRuntimeClient(appContext, AndroidAgentLogger).sendMessage(runId, prompt)
+                if (!accepted) withContext(Dispatchers.Main) {
+                    if (currentRunId == runId && homeState.input.isBlank()) {
+                        updateCurrentConversation(homeState.copy(input = prompt))
+                    }
+                    Toast.makeText(appContext, appContext.getString(R.string.overlay_continuation_unavailable), Toast.LENGTH_SHORT).show()
+                }
+            }
+            return
+        }
         if (
             (prompt.isBlank() && pendingImages.isEmpty() && pendingFileReferences.isEmpty()) ||
             homeState.isStreaming
@@ -2011,6 +2030,7 @@ internal class AgentAppState(
         persistSupplement: Boolean = true,
     ) {
         if (isReplyRewrite(runId)) {
+            (appContext.applicationContext as? EtaApp)?.updateIslandStatus(null)
             if (event is AgentEvent.RunStarted && runId in stopRequestedRunIds) scope.launch(Dispatchers.IO) {
                 AgentRuntimeClient(appContext, AndroidAgentLogger).cancelRun(runId)
             }
@@ -2177,6 +2197,7 @@ internal class AgentAppState(
         acknowledgeRuntimeResult: Boolean = false,
     ) {
         flushPendingRunDelta(runId)
+        (appContext.applicationContext as? EtaApp)?.updateIslandStatus(null)
         val rewriting = result.operation == AgentRuntimeWire.OP_REWRITE_REPLY || isReplyRewrite(runId)
         stopRequestedRunIds.remove(runId)
         if (runId == currentRunId) {

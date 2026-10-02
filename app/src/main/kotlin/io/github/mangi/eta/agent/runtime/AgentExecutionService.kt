@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Handler
+import android.os.PowerManager
 import android.os.IBinder
 import android.os.Looper
 import io.github.mangi.eta.R
@@ -24,6 +25,8 @@ internal class AgentExecutionService : Service() {
     }
     private val owner = ownerSequence.incrementAndGet()
     private var foregroundActive = false
+    /** Keeps the CPU available while an active model request is waiting for a streaming byte. */
+    private var wakeLock: PowerManager.WakeLock? = null
     @Volatile private var startRejected = false
 
     override fun onCreate() {
@@ -43,12 +46,39 @@ internal class AgentExecutionService : Service() {
         try {
             startForeground(NOTIFICATION_ID, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
             foregroundActive = true
+            acquireWakeLock()
         } catch (failure: RuntimeException) {
             startRejected = true
             AndroidAgentLogger.warn("Execution service foreground failed: type=${failure.safeLogType()}")
             stopTasks(startFailed = true)
         }
     }
+
+    private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) return
+        val manager = getSystemService(PowerManager::class.java) ?: return
+        wakeLock = runCatching {
+            manager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK,
+                "$packageName:agent-execution",
+            ).apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        }.onFailure { failure ->
+            AndroidAgentLogger.warn("Execution service partial wake lock failed: type=${failure.safeLogType()}")
+        }.getOrNull()
+    }
+    private fun releaseWakeLock() {
+        wakeLock?.let { lock ->
+            runCatching { if (lock.isHeld) lock.release() }
+                .onFailure { failure ->
+                    AndroidAgentLogger.warn("Execution service wake lock release failed: type=${failure.safeLogType()}")
+                }
+        }
+        wakeLock = null
+    }
+
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
@@ -64,6 +94,7 @@ internal class AgentExecutionService : Service() {
 
     override fun onDestroy() {
         if (instance === this) instance = null
+        releaseWakeLock()
         // 销毁时同样收回本服务拥有的任务。回收在独立有界工作线程上完成，不阻塞 Main。
         stopQueue.close(leases.drainOwner(owner))
         super.onDestroy()
@@ -78,6 +109,7 @@ internal class AgentExecutionService : Service() {
 
     private fun refreshNotification() {
         if (leases.closeOwnerIfIdle(owner)) {
+            releaseWakeLock()
             foregroundActive = false
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()

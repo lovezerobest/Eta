@@ -1,0 +1,2 @@
+allprojects { afterEvaluate { p -> p.plugins.withId('com.android.application') { p.androidComponents.finalizeDsl { dsl -> if (System.getenv('ANDROID_AAPT2')) dsl.buildToolsVersion = dsl.buildToolsVersion } } } }
+gradle.projectsEvaluated { rootProject.allprojects.each { p -> if (System.getenv('ANDROID_AAPT2')) p.tasks.configureEach { t -> if (t.class.name.contains('Aapt2')) { try { t.aapt2FromMavenOverride = System.getenv('ANDROID_AAPT2') } catch (ignored) {} } } } }

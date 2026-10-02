@@ -110,7 +110,6 @@ import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.blur.rememberLayerBackdrop
 import top.yukonga.miuix.kmp.blur.textureBlur
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
 
 /**
@@ -601,8 +600,7 @@ internal fun AgentConversationMessages(
             verticalArrangement = Arrangement.Top,
             modifier = Modifier
                 .fillMaxSize()
-                .scrollEndHaptic()
-                .overScrollVertical(),
+                .scrollEndHaptic(),
             contentPadding = PaddingValues(
                 top = 14.dp,
                 bottom = bottomInset + 14.dp,
@@ -612,14 +610,16 @@ internal fun AgentConversationMessages(
             items(
                 items = timelineEntries,
                 key = { it.key },
+                contentType = { entry ->
+                    when (entry) {
+                        is AgentTimelineEntry.Message -> "message"
+                        is AgentTimelineEntry.WorkProcess -> "work-process"
+                    }
+                },
             ) { entry ->
-                val itemModifier = Modifier.animateItem(
-                    fadeInSpec = tween(durationMillis = 180),
-                    placementSpec = null,
-                    // 历史轮次被编辑、删除或重新生成时必须立即退出；退出动画会让已从
-                    // 状态中裁掉的旧消息继续绘制，并与同位置的新流式消息短暂重叠。
-                    fadeOutSpec = null,
-                )
+                // 历史消息不参与布局动画：加载或流式列表更新时，animateItem 会为每个
+                // 可见条目增加动画/graphicsLayer 测量节点，放大 LazyColumn 的主线程开销。
+                val itemModifier = Modifier
                 when (entry) {
                     is AgentTimelineEntry.Message -> {
                         val message = entry.message

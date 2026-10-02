@@ -103,6 +103,7 @@ android {
 }
 
 dependencies {
+    implementation(files("libs/astraisland-client.aar"))
     implementation(libs.commons.compress)
     implementation(libs.xz)
     compileOnly(libs.libxposed.api)

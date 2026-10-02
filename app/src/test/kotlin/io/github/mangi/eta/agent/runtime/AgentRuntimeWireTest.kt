@@ -179,6 +179,21 @@ class AgentRuntimeWireTest {
     }
 
     @Test
+    fun steeringMessageAndAcknowledgementRoundTrip() {
+        val request = AgentRuntimeWire.steerBundle("run-1", "继续检查后台任务")
+        assertEquals("run-1", AgentRuntimeWire.runIdFromBundle(request))
+        assertEquals("继续检查后台任务", AgentRuntimeWire.steerTextFromBundle(request))
+
+        val response = AgentRuntimeWire.steerResponseBundle("run-1", accepted = true)
+        assertEquals("run-1", AgentRuntimeWire.runIdFromBundle(response))
+        assertTrue(AgentRuntimeWire.steerSucceeded(response))
+        assertThrows(IllegalArgumentException::class.java) {
+            AgentRuntimeWire.steerBundle("run-1", "x".repeat(16_001))
+        }
+    }
+
+
+    @Test
     fun attachResponsePreservesRunIdentityAndDecision() {
         val accepted = AgentRuntimeWire.attachRunResponseBundle("run-1", attached = true)
         val rejected = AgentRuntimeWire.attachRunResponseBundle("run-2", attached = false)
