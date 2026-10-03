@@ -90,6 +90,10 @@ data class TokenUsageUi(
     val reasoningTokens: Int? = null,
     val cachedTokens: Int? = null,
 ) {
+    /** Prompt pressure excludes generated output tokens. */
+    val promptTokens: Int?
+        get() = inputTokens ?: contextTokens?.let { (it - (outputTokens ?: 0)).coerceAtLeast(0) }
+
     val isEmpty: Boolean
         get() = contextTokens == null &&
             inputTokens == null &&

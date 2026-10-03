@@ -114,7 +114,7 @@ internal fun latestContextUsage(
 ): AgentContextUsageUi {
     val lastUsage = messages.asReversed().asSequence().mapNotNull { message ->
         when (message) {
-            is AgentMessageUi -> message.usage?.contextTokens?.let { it to false }
+            is AgentMessageUi -> message.usage?.promptTokens?.let { it to false }
             is SystemNoticeMessageUi -> message.contextTokens?.let { it to true }
             else -> null
         }
