@@ -17,15 +17,25 @@ internal sealed interface AgentEvent {
         val tokensBefore: Int,
         val tokensAfter: Int? = null,
         val reasonCode: String = "",
+        val summaryRequests: Int? = null,
+        val elapsedMs: Long? = null,
     ) : AgentEvent {
-        val displayMessage: String get() = when (phase) {
-            PHASE_STARTED -> RUNNING_DETAIL
-            PHASE_COMPLETED -> "上下文已压缩：约 ${compactionTokenCount(tokensBefore)} → " +
-                "${compactionTokenCount(tokensAfter ?: 0)} tokens"
-            else -> "上下文压缩失败，原始上下文已保留。"
+        val displayMessage: String get() {
+            val progress = if (summaryRequests == null) "" else {
+                val seconds = ((elapsedMs ?: 0L) / 1000.0).let { String.format(java.util.Locale.ROOT, "%.1f", it) }
+                "（已发起摘要请求 $summaryRequests 次，累计耗时 $seconds 秒）"
+            }
+            return when (phase) {
+                PHASE_STARTED -> if (progress.isEmpty()) RUNNING_DETAIL else "正在压缩上下文$progress"
+                PHASE_COMPLETED -> "上下文已压缩：约 ${compactionTokenCount(tokensBefore)} → " +
+                    "${compactionTokenCount(tokensAfter ?: 0)} tokens" + if (progress.isEmpty()) "" else " · $progress"
+                else -> "上下文压缩失败，原始上下文已保留。" + if (progress.isEmpty()) "" else " $progress"
+            }
         }
+
         override fun toLogLine(): String =
-            "context_compaction phase=${phase.toSafeLogToken()}, before=$tokensBefore, after=$tokensAfter, code=${reasonCode.toSafeLogToken()}"
+            "context_compaction phase=${phase.toSafeLogToken()}, before=$tokensBefore, after=$tokensAfter, " +
+                "summary_requests=$summaryRequests, elapsed_ms=$elapsedMs, code=${reasonCode.toSafeLogToken()}"
 
         companion object {
             const val PHASE_STARTED = "started"

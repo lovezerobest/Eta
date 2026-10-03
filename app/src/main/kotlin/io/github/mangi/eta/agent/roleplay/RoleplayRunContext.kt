@@ -31,7 +31,8 @@ internal data class RoleplayRunContext(
             source.optJSONObject(index)?.takeIf(::isDialogue)
                 ?.let(::dialogueText)
         }
-        val inputBudget = ((contextWindow ?: 128_000) * AgentContextBudget.TRIGGER_RATIO).toInt()
+        val inputBudget = contextWindow?.let { AgentContextBudget(it).thresholdTokens() }
+            ?: (128_000 * AgentContextBudget.TRIGGER_RATIO).toInt()
         val extraInstructions = expand(card.depthPrompt?.prompt.orEmpty()) + expand(card.postHistoryInstructions)
         val available = (inputBudget - AgentContextBudget.rawEstimate(source, tools) -
             AgentContextBudget.textTokens(extraInstructions) - 16).coerceAtLeast(0)

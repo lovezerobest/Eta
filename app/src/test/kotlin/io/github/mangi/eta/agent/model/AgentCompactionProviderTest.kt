@@ -15,13 +15,13 @@ import org.junit.Test
 
 class AgentCompactionProviderTest {
     @Test
-    fun allProtocolsDisableToolsAndIgnoreCustomInputOverridesForSummaries() {
-        assertIsolatedRequests(ProviderRequestPurpose.COMPACTION)
+    fun compactionReplaysToolSchemasButIgnoresCustomInputOverrides() {
+        assertRequestIsolation(ProviderRequestPurpose.COMPACTION, expectSchemas = true)
     }
 
     @Test
-    fun allProtocolsDisableToolsAndIgnoreCustomInputOverridesForReplyRewrites() {
-        assertIsolatedRequests(ProviderRequestPurpose.REPLY_REWRITE)
+    fun replyRewriteDisablesToolsAndIgnoresCustomInputOverrides() {
+        assertRequestIsolation(ProviderRequestPurpose.REPLY_REWRITE, expectSchemas = false)
     }
 
     @Test
@@ -63,7 +63,7 @@ class AgentCompactionProviderTest {
         }
     }
 
-    private fun assertIsolatedRequests(purpose: ProviderRequestPurpose) {
+    private fun assertRequestIsolation(purpose: ProviderRequestPurpose, expectSchemas: Boolean) {
         listOf(OpenAiChatCompletionsProvider, OpenAiResponsesProvider, AnthropicMessagesProvider).forEach { provider ->
             val captured = AtomicReference<JSONObject>()
             val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
@@ -82,16 +82,25 @@ class AgentCompactionProviderTest {
                     extraBodyJson = """{"tools":[{"type":"web_search"}],"input":"BAD_INPUT"}""",
                     customBody = listOf(CustomBody("messages", JsonPrimitive("BAD_MESSAGES"))),
                 )
+                val schemas = JSONArray().put(JSONObject()
+                    .put("type", "function")
+                    .put("function", JSONObject().put("name", "fixture_tool")
+                        .put("description", "fixture schema").put("parameters", JSONObject())))
                 val request = ProviderRequest(config,
                     JSONArray().put(AgentConversationCodec.userTextMessage("总结以下历史")),
-                    AgentToolCatalog.build(terminalTools = false, browserTools = false), purpose = purpose)
+                    schemas, purpose = purpose)
                 assertThrows(AgentModelFailure::class.java) {
                     provider.complete(request, AgentRunController())
                 }
                 val body = captured.get()
                 assertNotNull(body)
-                assertFalse(body.has("tools"))
-                assertFalse(body.has("tool_choice"))
+                assertEquals(expectSchemas, body.has("tools"))
+                if (expectSchemas) {
+                    if (provider === AnthropicMessagesProvider) assertEquals("none", body.getJSONObject("tool_choice").getString("type"))
+                    else assertEquals("none", body.getString("tool_choice"))
+                } else assertFalse(body.has("tool_choice"))
+                if (expectSchemas) assertTrue(body.toString().contains("fixture_tool"))
+                assertFalse(body.toString().contains("web_search"))
                 assertFalse(body.toString().contains("BAD_INPUT"))
                 assertFalse(body.toString().contains("BAD_MESSAGES"))
                 assertTrue(body.toString().contains("总结以下历史"))
