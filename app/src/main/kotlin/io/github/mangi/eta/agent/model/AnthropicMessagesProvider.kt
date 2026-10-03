@@ -43,14 +43,13 @@ internal object AnthropicMessagesProvider : AgentProviderClient {
                 ProviderRequestHeaders.mergeInto(this, config.baseUrl, config.customHeaders, request.sessionId)
             }
             .build()
+        val requestJson = buildRequestJson(config, request.messages, request.effectiveTools).apply {
+            if (request.purpose == ProviderRequestPurpose.COMPACTION) put("tool_choice", JSONObject().put("type", "none"))
+        }
         val httpRequest = Request.Builder()
             .url(ProviderUrls.anthropicMessagesUrl(config.baseUrl))
             .headers(headers)
-            .post(
-                buildRequestJson(config, request.messages, request.effectiveTools)
-                    .toString()
-                    .toRequestBody(JSON_MEDIA_TYPE)
-            )
+            .post(requestJson.toString().toRequestBody(JSON_MEDIA_TYPE))
             .build()
 
         val call = AgentHttpClient.modelClient.newCall(httpRequest)
