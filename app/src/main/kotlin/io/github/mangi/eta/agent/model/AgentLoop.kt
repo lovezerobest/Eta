@@ -95,7 +95,7 @@ internal class AgentLoop(
             var requestMessages = AssistantScreenContextProjection.project(
                 roleplayContext?.projectMessages(messages, roundTools) ?: messages,
             )
-            var requestEstimate = AgentContextBudget.rawEstimate(requestMessages, roundTools)
+            var budgetSurfaceEstimate = AgentContextBudget.rawEstimate(messages, roundTools)
             var roundInputTokens: Int? = null
             var overflowAttempts = 0
             val reasoningLengthBeforeRound = accumulatedReasoning.length
@@ -137,7 +137,7 @@ internal class AgentLoop(
                         requestMessages = AssistantScreenContextProjection.project(
                             roleplayContext?.projectMessages(messages, roundTools) ?: messages,
                         )
-                        requestEstimate = AgentContextBudget.rawEstimate(requestMessages, roundTools)
+                        budgetSurfaceEstimate = AgentContextBudget.rawEstimate(messages, roundTools)
                         roundInputTokens = null
                         round++
                     }
@@ -149,7 +149,8 @@ internal class AgentLoop(
             }
             context.budget.observe(
                 roundInputTokens?.let { AgentTokenUsage(inputTokens = it) },
-                requestEstimate,
+                budgetSurfaceEstimate,
+                promptTokensOverride = roundInputTokens,
             )
             round = completedRound.round
             val providerResponse = completedRound.response
